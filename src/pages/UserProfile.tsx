@@ -31,6 +31,7 @@ const UserProfile = () => {
     nome: '',
     avatar_url: ''
   });
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
@@ -46,19 +47,42 @@ const UserProfile = () => {
     if (!user) return;
 
     try {
+      // Primeiro tenta buscar o perfil
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
       
-      setProfile(data);
-      setFormData({
-        nome: data.nome,
-        avatar_url: ''
-      });
+      // Se não existe perfil, cria um novo
+      if (!data) {
+        const { data: newProfile, error: createError } = await supabase
+          .from('profiles')
+          .insert({
+            id: user.id,
+            nome: user.user_metadata?.nome || user.user_metadata?.name || user.email?.split('@')[0] || 'Usuário',
+            email: user.email || '',
+            role: 'user'
+          })
+          .select()
+          .single();
+
+        if (createError) throw createError;
+        
+        setProfile(newProfile);
+        setFormData({
+          nome: newProfile.nome,
+          avatar_url: newProfile.avatar_url || ''
+        });
+      } else {
+        setProfile(data);
+        setFormData({
+          nome: data.nome,
+          avatar_url: data.avatar_url || ''
+        });
+      }
     } catch (error) {
       console.error('Error loading profile:', error);
       toast({
@@ -75,10 +99,34 @@ const UserProfile = () => {
     if (!user || !profile) return;
 
     try {
+      let avatarUrl = formData.avatar_url;
+
+      // Se há um arquivo de avatar para upload
+      if (avatarFile) {
+        const fileExt = avatarFile.name.split('.').pop();
+        const fileName = `${user.id}.${fileExt}`;
+        
+        // Criar bucket se não existir (será ignorado se já existir)
+        await supabase.storage.createBucket('avatars', { public: true });
+        
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('avatars')
+          .upload(fileName, avatarFile, { upsert: true });
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('avatars')
+          .getPublicUrl(fileName);
+
+        avatarUrl = publicUrl;
+      }
+
       const { error } = await supabase
         .from('profiles')
         .update({
           nome: formData.nome,
+          avatar_url: avatarUrl,
           updated_at: new Date().toISOString()
         })
         .eq('id', user.id);
@@ -91,6 +139,7 @@ const UserProfile = () => {
       });
 
       setEditing(false);
+      setAvatarFile(null);
       loadProfile();
     } catch (error) {
       console.error('Error updating profile:', error);
@@ -229,7 +278,7 @@ const UserProfile = () => {
             <CardContent className="space-y-6">
               <div className="flex items-center space-x-4">
                 <Avatar className="w-20 h-20">
-                  <AvatarImage src="" />
+                  <AvatarImage src={profile.avatar_url || ''} />
                   <AvatarFallback>
                     {profile.nome.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
                   </AvatarFallback>
@@ -255,6 +304,16 @@ const UserProfile = () => {
                     />
                   </div>
 
+                  <div className="space-y-2">
+                    <Label htmlFor="avatar">Foto de Perfil</Label>
+                    <Input
+                      id="avatar"
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setAvatarFile(e.target.files?.[0] || null)}
+                      className="file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/80"
+                    />
+                  </div>
 
                   <div className="flex gap-2">
                     <Button onClick={handleSave}>Salvar</Button>
