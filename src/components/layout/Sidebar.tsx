@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutGrid, Calendar, Settings, PlusCircle, Lightbulb, Target, Users, Shield } from 'lucide-react';
+import { LayoutGrid, Calendar, Settings, PlusCircle, Lightbulb, Target, Users, Shield, User } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 
 export const Sidebar = () => {
@@ -43,6 +43,12 @@ export const Sidebar = () => {
       label: 'Equipe',
       icon: Users,
       description: 'Gestão de Membros'
+    },
+    {
+      path: '/profile',
+      label: 'Meu Perfil',
+      icon: User,
+      description: 'Configurações pessoais'
     },
     {
       path: '/super-admin',

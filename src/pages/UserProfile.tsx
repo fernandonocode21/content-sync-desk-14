@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { User, Mail, Calendar, Shield, Lock } from 'lucide-react';
+import { User, Mail, Calendar, Shield, Lock, Upload, Camera } from 'lucide-react';
 
 interface Profile {
   id: string;
@@ -31,6 +31,7 @@ const UserProfile = () => {
     nome: '',
     avatar_url: ''
   });
+  const [uploading, setUploading] = useState(false);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [passwordData, setPasswordData] = useState({
@@ -47,17 +48,25 @@ const UserProfile = () => {
     if (!user) return;
 
     try {
-      // Primeiro tenta buscar o perfil
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .maybeSingle();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error loading profile:', error);
+        throw error;
+      }
       
-      // Se não existe perfil, cria um novo
-      if (!data) {
+      if (data) {
+        setProfile(data);
+        setFormData({
+          nome: data.nome,
+          avatar_url: data.avatar_url || ''
+        });
+      } else {
+        // Perfil não encontrado, tentar criar
         const { data: newProfile, error: createError } = await supabase
           .from('profiles')
           .insert({
@@ -67,27 +76,26 @@ const UserProfile = () => {
             role: 'user'
           })
           .select()
-          .single();
+          .maybeSingle();
 
-        if (createError) throw createError;
+        if (createError) {
+          console.error('Error creating profile:', createError);
+          throw createError;
+        }
         
-        setProfile(newProfile);
-        setFormData({
-          nome: newProfile.nome,
-          avatar_url: newProfile.avatar_url || ''
-        });
-      } else {
-        setProfile(data);
-        setFormData({
-          nome: data.nome,
-          avatar_url: data.avatar_url || ''
-        });
+        if (newProfile) {
+          setProfile(newProfile);
+          setFormData({
+            nome: newProfile.nome,
+            avatar_url: newProfile.avatar_url || ''
+          });
+        }
       }
     } catch (error) {
       console.error('Error loading profile:', error);
       toast({
         title: "Erro",
-        description: "Erro ao carregar perfil",
+        description: "Erro ao carregar perfil. Verifique sua conexão.",
         variant: "destructive"
       });
     } finally {
@@ -277,12 +285,27 @@ const UserProfile = () => {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="flex items-center space-x-4">
-                <Avatar className="w-20 h-20">
-                  <AvatarImage src={profile.avatar_url || ''} />
-                  <AvatarFallback>
-                    {profile.nome.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
+                <div className="relative">
+                  <Avatar className="w-20 h-20">
+                    <AvatarImage src={profile.avatar_url || ''} />
+                    <AvatarFallback>
+                      {profile.nome.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  {editing && (
+                    <label htmlFor="avatar-upload" className="absolute bottom-0 right-0 bg-primary text-primary-foreground rounded-full p-1 cursor-pointer hover:bg-primary/90">
+                      <Camera className="w-4 h-4" />
+                      <input
+                        id="avatar-upload"
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => setAvatarFile(e.target.files?.[0] || null)}
+                        className="hidden"
+                        disabled={uploading}
+                      />
+                    </label>
+                  )}
+                </div>
                 <div>
                   <h3 className="text-xl font-semibold">{profile.nome}</h3>
                   <p className="text-muted-foreground">{profile.email}</p>
@@ -304,20 +327,12 @@ const UserProfile = () => {
                     />
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="avatar">Foto de Perfil</Label>
-                    <Input
-                      id="avatar"
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => setAvatarFile(e.target.files?.[0] || null)}
-                      className="file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/80"
-                    />
-                  </div>
 
                   <div className="flex gap-2">
-                    <Button onClick={handleSave}>Salvar</Button>
-                    <Button variant="outline" onClick={() => setEditing(false)}>
+                    <Button onClick={handleSave} disabled={uploading}>
+                      {uploading ? 'Salvando...' : 'Salvar'}
+                    </Button>
+                    <Button variant="outline" onClick={() => setEditing(false)} disabled={uploading}>
                       Cancelar
                     </Button>
                   </div>
